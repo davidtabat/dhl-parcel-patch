@@ -1,0 +1,122 @@
+Index: vendor/dhlparcel/magento2-plugin/etc/events.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/vendor/dhlparcel/magento2-plugin/etc/events.xml b/vendor/dhlparcel/magento2-plugin/etc/events.xml
+--- a/vendor/dhlparcel/magento2-plugin/etc/events.xml
++++ b/vendor/dhlparcel/magento2-plugin/etc/events.xml	(date 1702900600843)
+@@ -31,7 +31,7 @@
+     <event name="email_invoice_set_template_vars_before">
+         <observer name="dhlparcel_shipping_email_servicepoint" instance="DHLParcel\Shipping\Observer\EmailServicePoint" />
+     </event>
+-    <event name="sales_order_save_after">
++    <event name="sales_order_save_commit_after">
+         <observer name="dhlparcel_shipping_auto_shipment" instance="DHLParcel\Shipping\Observer\AutoShipment"/>
+         <observer name="dhlparcel_shipping_auto_mail" instance="DHLParcel\Shipping\Observer\AutoMail"/>
+     </event>
+
+Index: vendor/dhlparcel/magento2-plugin/Observer/AutoShipment.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/vendor/dhlparcel/magento2-plugin/Observer/AutoShipment.php b/vendor/dhlparcel/magento2-plugin/Observer/AutoShipment.php
+--- a/vendor/dhlparcel/magento2-plugin/Observer/AutoShipment.php
++++ b/vendor/dhlparcel/magento2-plugin/Observer/AutoShipment.php	(date 1711493698877)
+@@ -71,15 +71,7 @@
+             return;
+         }
+
+-        /**
+-         * Force new order from database, looks like object is not always reliable
+-         *
+-         * @var $order Order
+-         */
+-        $order = $this->orderRepository->get($observer->getEvent()->getOrder()->getId());
+-        if (!$order->canShip() || $order->hasShipments() || $order->getShipmentsCollection()->count() > 0) {
+-            return;
+-        }
++        $order = $observerOrder;
+
+         if (intval($this->helper->getConfigData('usability/automation/shipment')) === YesNoDHL::OPTION_DHL && !$this->presetService->exists($order)) {
+             return;
+@@ -93,7 +85,7 @@
+             $this->currentAutoShipment->setOrderId($order->getId());
+         }
+
+-        $shipment = $this->orderService->createShipment($order->getId());
++        $shipment = $this->orderService->createShipment($order);
+
+         if (boolval($this->helper->getConfigData('usability/automation/print'))) {
+             // Reload shipment (not the shipment data in memory but from database with the newly created tracks) and send to printer
+
+Index: vendor/dhlparcel/magento2-plugin/Model/Service/Order.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/vendor/dhlparcel/magento2-plugin/Model/Service/Order.php b/vendor/dhlparcel/magento2-plugin/Model/Service/Order.php
+--- a/vendor/dhlparcel/magento2-plugin/Model/Service/Order.php
++++ b/vendor/dhlparcel/magento2-plugin/Model/Service/Order.php	(date 1711493698893)
+@@ -35,11 +35,11 @@
+         $this->shipmentRepository = $shipmentRepository;
+     }
+
+-    public function createShipment($orderId)
++    public function createShipment($order)
+     {
+-        $this->shipmentLoader->setOrderId($orderId);
++        $this->shipmentLoader->setOrderId($order->getId());
+         $this->preloadShipment();
+-        $shipment = $this->shipmentLoader->load();
++        $shipment = $this->shipmentLoader->load($order);
+         if ($shipment === false) {
+             throw new NotShippableException(__("A shipment cannot be created for the order"));
+         }
+
+Index: vendor/dhlparcel/magento2-plugin/Controller/Adminhtml/Bulk/Create.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/vendor/dhlparcel/magento2-plugin/Controller/Adminhtml/Bulk/Create.php b/vendor/dhlparcel/magento2-plugin/Controller/Adminhtml/Bulk/Create.php
+--- a/vendor/dhlparcel/magento2-plugin/Controller/Adminhtml/Bulk/Create.php
++++ b/vendor/dhlparcel/magento2-plugin/Controller/Adminhtml/Bulk/Create.php	(date 1711493896916)
+@@ -71,7 +71,7 @@
+                     continue;
+                 }
+
+-                $this->orderService->createShipment($order->getId());
++                $this->orderService->createShipment($order);
+                 $success[] = '#' . $order->getRealOrderId();
+                 $successOrderIds[] = $order->getId();
+             } catch (LocalizedException $e) {
+
+Index: vendor/magento/module-shipping/Controller/Adminhtml/Order/ShipmentLoader.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/vendor/magento/module-shipping/Controller/Adminhtml/Order/ShipmentLoader.php b/vendor/magento/module-shipping/Controller/Adminhtml/Order/ShipmentLoader.php
+--- a/vendor/magento/module-shipping/Controller/Adminhtml/Order/ShipmentLoader.php
++++ b/vendor/magento/module-shipping/Controller/Adminhtml/Order/ShipmentLoader.php	(date 1711493896908)
+@@ -104,15 +104,15 @@
+      * @return bool|\Magento\Sales\Model\Order\Shipment
+      * @throws \Magento\Framework\Exception\LocalizedException
+      */
+-    public function load()
++    public function load($providedOrder = null)
+     {
+         $shipment = false;
+         $orderId = $this->getOrderId();
+         $shipmentId = $this->getShipmentId();
+         if ($shipmentId) {
+             $shipment = $this->shipmentRepository->get($shipmentId);
+-        } elseif ($orderId) {
+-            $order = $this->orderRepository->get($orderId);
++        } elseif ($orderId || $providedOrder) {
++            $order = $providedOrder ?? $this->orderRepository->get($orderId);
+
+             /**
+              * Check order existing
